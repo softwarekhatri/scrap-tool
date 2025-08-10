@@ -13,10 +13,7 @@
         },
         {
             "src": "/(.*)",
-            "dest": "/public/$1"
-        },
-        {
-            "handle": "filesystem"
+            "dest": "/server.js"
         }
     ]
 }
