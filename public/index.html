@@ -18,7 +18,7 @@
     <!-- HEADER -->
     <header class="bg-gray-900 shadow-md py-4 px-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div class="flex items-center space-x-3">
-            <img src="logo.png" alt="Logo" class="w-25 h-10">
+            <!-- <img src="logo.png" alt="Logo" class="w-25 h-10"> -->
             <h1 class="text-xl sm:text-2xl font-bold text-white">Web Scraping Tool</h1>
         </div>
         <!-- Right: Nav Links -->
@@ -63,6 +63,9 @@
                     <div class="flex flex-wrap gap-2 mt-2 sm:mt-0">
                         <button id="copyBtn"
                             class="bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600">Copy</button>
+                        <button id="minCopyBtn"
+                            class="bg-yellow-500 text-white px-4 py-1 rounded hover:bg-yellow-600">Minified
+                            Copy</button>
                         <button id="clearBtn"
                             class="bg-red-500 text-white px-4 py-1 rounded hover:bg-red-600">Clear</button>
                     </div>
@@ -77,10 +80,9 @@
     <footer
         class="bg-gray-900 shadow-inner py-4 px-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div class="flex items-center space-x-3">
-            <img src="logo.png" alt="Logo" class="w-25 h-10">
-            <span class="text-white text-sm text-center sm:text-left">&copy; 2025 Web Scraping Tool <a
-                    class="text-blue-400 hover:text-green-400 transition"
-                    href="https://www.linkedin.com/company/khatrisoftware/">@KhatriSoftware</a>. All rights reserved.
+            <!-- <img src="logo.png" alt="Logo" class="w-25 h-10"> -->
+            <span class="text-white text-sm text-center sm:text-left">&copy; 2025 Web Scraping Tool. All rights
+                reserved.
             </span>
         </div>
         <a href="#" class="text-blue-500 text-sm hover:underline text-center sm:text-right">Privacy Policy</a>
@@ -89,6 +91,7 @@
     <script>
         const output = document.getElementById('output');
         const copyBtn = document.getElementById('copyBtn');
+        const minCopyBtn = document.getElementById('minCopyBtn');
         const clearBtn = document.getElementById('clearBtn');
 
         copyBtn.addEventListener('click', () => {
@@ -96,6 +99,23 @@
                 copyBtn.textContent = 'Copied!';
                 setTimeout(() => copyBtn.textContent = 'Copy', 2000);
             });
+        });
+
+        minCopyBtn.addEventListener('click', () => {
+            try {
+                const parsed = JSON.parse(output.textContent);
+                const minified = JSON.stringify(parsed);
+                navigator.clipboard.writeText(minified).then(() => {
+                    minCopyBtn.textContent = 'Minified Copied!';
+                    setTimeout(() => minCopyBtn.textContent = 'Minified Copy', 2000);
+                });
+            } catch (e) {
+                // If it's not valid JSON, just copy raw without spaces
+                navigator.clipboard.writeText(output.textContent.replace(/\s+/g, ' ')).then(() => {
+                    minCopyBtn.textContent = 'Minified Copied!';
+                    setTimeout(() => minCopyBtn.textContent = 'Minified Copy', 2000);
+                });
+            }
         });
 
         clearBtn.addEventListener('click', () => {
