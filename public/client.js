@@ -23,11 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`${endpoint}?url=${encodeURIComponent(url)}`);
             const data = await response.json();
-
             if (!response.ok) {
                 throw new Error(data.error || 'Something went wrong');
             }
-
             // output.textContent = JSON.parse(data, null, 2);
             output.textContent = data;
         } catch (error) {
