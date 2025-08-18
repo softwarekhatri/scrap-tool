@@ -18,13 +18,11 @@ const schemaGenerator = new SchemaGenerator();
 // API endpoint to get article schema
 app.get('/api/article', async (req, res) => {
     const url = req.query.url;
-
     if (!url) {
         return res.status(400).json({ error: 'URL query parameter is required.' });
     }
-
     try {
-        const data = await webScraper.scrapeUrl(url);
+        const data = await webScraper.scrapeUrl(url, 'article');
         const schema = schemaGenerator.generateArticleSchema(data, url);
         res.json(schema);
     } catch (error) {
@@ -36,12 +34,11 @@ app.get('/api/article', async (req, res) => {
 // API endpoint to get breadcrumbs schema
 app.get('/api/breadcrumbs', async (req, res) => {
     const url = req.query.url;
-
     if (!url) {
         return res.status(400).json({ error: 'URL query parameter is required.' });
     }
     try {
-        const data = await webScraper.scrapeUrl(url);
+        const data = await webScraper.scrapeUrl(url, 'breadcrumbs');
         const schema = schemaGenerator.generateBreadcrumbSchema(data);
         res.json(schema);
     } catch (error) {
@@ -53,13 +50,11 @@ app.get('/api/breadcrumbs', async (req, res) => {
 // API endpoint to get FAQ schema
 app.get('/api/faqs', async (req, res) => {
     const url = req.query.url;
-
     if (!url) {
         return res.status(400).json({ error: 'URL query parameter is required.' });
     }
-
     try {
-        const data = await webScraper.scrapeUrl(url);
+        const data = await webScraper.scrapeUrl(url, 'faq');
         // Ensure data.faqs is a valid array before generating the schema
         if (!data.faqs || data.faqs.length === 0) {
             return res.status(400).json({ error: 'No FAQ data found on this page.' });

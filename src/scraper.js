@@ -1,6 +1,9 @@
 // src/scraper.js
 const cheerio = require('cheerio');
 const { URL } = require('url');
+const puppeteer = require('puppeteer');
+const https = require('https');
+const http = require('http');
 
 /**
  * @typedef {object} ExtractedData
@@ -20,32 +23,115 @@ const { URL } = require('url');
  */
 
 class WebScraper {
+    // Shared Puppeteer browser instance
+    static browser = null;
+
+    /**
+     * Get or launch a shared Puppeteer browser instance (non-headless, stays open)
+     * @returns {Promise<import('puppeteer').Browser>}
+     */
+    static async getBrowser() {
+        if (WebScraper.browser && WebScraper.browser.isConnected()) {
+            return WebScraper.browser;
+        }
+        // Use headless mode for background operation
+        WebScraper.browser = await puppeteer.launch({ headless: 'new' });
+        return WebScraper.browser;
+    }
+
+    /**
+     * Fetch static HTML using Node.js http/https
+     * @param {string} url
+     * @returns {Promise<string>} HTML string
+     */
+    static fetchStaticHtml(url) {
+        return new Promise((resolve, reject) => {
+            const lib = url.startsWith('https') ? https : http;
+            lib.get(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+            }, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve(data));
+            }).on('error', reject);
+        });
+    }
     /**
      * Scrapes a given URL and extracts metadata.
      * @param {string} url The URL to scrape.
      * @returns {Promise<ExtractedData>} The extracted data.
      */
-    async scrapeUrl(url) {
+    /**
+     * Scrape a URL for a specific type: 'article', 'breadcrumbs', or 'faq'.
+     * @param {string} url
+     * @param {'article'|'breadcrumbs'|'faq'} type
+     * @returns {Promise<ExtractedData>}
+     */
+    async scrapeUrl(url, type = 'article') {
         try {
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'DNT': '1',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
+            let html, $;
+            if (type === 'faq') {
+                // Use Puppeteer for dynamic FAQ extraction
+                const browser = await WebScraper.getBrowser();
+                const page = await browser.newPage();
+                await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+                await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+                // Scroll to bottom to trigger lazy loading (if any)
+                await page.evaluate(async () => {
+                    await new Promise((resolve) => {
+                        let totalHeight = 0;
+                        const distance = 500;
+                        const timer = setInterval(() => {
+                            const scrollHeight = document.body.scrollHeight;
+                            window.scrollBy(0, distance);
+                            totalHeight += distance;
+                            if (totalHeight >= scrollHeight) {
+                                clearInterval(timer);
+                                resolve();
+                            }
+                        }, 200);
+                    });
+                });
+                // Try to click FAQ tab/button if present
+                await page.evaluate(() => {
+                    const faqSelectors = [
+                        'a', 'button', '[role="tab"]', '.tab', '.menu-item', '.nav-item', '.accordion-title', '.accordion-header'
+                    ];
+                    const faqTexts = ['faq', 'frequently asked questions', 'faqs'];
+                    let found = false;
+                    for (const selector of faqSelectors) {
+                        const elements = Array.from(document.querySelectorAll(selector));
+                        for (const el of elements) {
+                            const text = (el.textContent || '').toLowerCase();
+                            if (faqTexts.some(faq => text.includes(faq))) {
+                                el.click();
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) break;
+                    }
+                });
+                // Wait for FAQ section if present (try common selectors)
+                try {
+                    await page.waitForSelector('.faq-content, [itemtype="https://schema.org/FAQPage"], h3', { timeout: 8000 });
+                } catch (e) {
+                    // Continue even if FAQ selector not found
                 }
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                html = await page.content();
+                await page.close();
+            } else {
+                // Use static fetch for article and breadcrumbs
+                html = await WebScraper.fetchStaticHtml(url);
             }
-
-            const html = await response.text();
-            const $ = cheerio.load(html);
-
+            $ = cheerio.load(html);
             const extractedData = this.extractMetadata($, url);
             return extractedData;
         } catch (error) {
@@ -132,7 +218,27 @@ class WebScraper {
                 }
             });
 
-            // Method 3: Fallback to searching for common HTML structures (e.g., h3 + p, h4 + div)
+            // Method 3: Look for .faq-content h3 + div (DesignCafe pattern)
+            if (faqs.length === 0) {
+                $('.faq-content h3').each((_, element) => {
+                    const question = $(element).text().trim();
+                    // The answer is in the next sibling div
+                    let answer = '';
+                    let next = $(element).next();
+                    // Sometimes there may be whitespace or comments between h3 and div
+                    while (next.length && next[0].type === 'text' && !next.text().trim()) {
+                        next = next.next();
+                    }
+                    if (next.length && next.is('div')) {
+                        answer = next.text().trim();
+                    }
+                    if (question && answer) {
+                        faqs.push({ question, answer });
+                    }
+                });
+            }
+
+            // Method 4: Fallback to searching for common HTML structures (e.g., h3 + p, h4 + div)
             if (faqs.length === 0) {
                 $('h3').each((_, element) => {
                     const nextEl = $(element).next();
@@ -142,6 +248,17 @@ class WebScraper {
                         if (question && answer) {
                             faqs.push({ question, answer });
                         }
+                    }
+                });
+            }
+
+            // Method 5: Fallback for .faq-content .faq-item (if present)
+            if (faqs.length === 0) {
+                $('.faq-content .faq-item').each((_, element) => {
+                    const question = $(element).find('h3, h4, .faq-question').first().text().trim();
+                    const answer = $(element).find('div, p, .faq-answer').not('h3, h4, .faq-question').first().text().trim();
+                    if (question && answer) {
+                        faqs.push({ question, answer });
                     }
                 });
             }
